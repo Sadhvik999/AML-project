@@ -101,3 +101,30 @@ def test_model_pipeline_end_to_end(sample_water_data):
     preds = pipe.predict(X)
     assert len(preds) == len(y)
     assert set(np.unique(preds)).issubset({0, 1})
+
+
+def test_inspect_dataset_shape_and_nulls(sample_water_data):
+    """Test explicit row, column, and missingness counting."""
+    from src.data.clean import inspect_dataset_shape_and_nulls
+    stats = inspect_dataset_shape_and_nulls(sample_water_data)
+    assert stats["n_rows"] == 100
+    assert stats["n_cols"] == 7
+    assert stats["total_missing_cells"] > 0
+    assert "ph" in stats["missing_counts"]
+
+
+def test_remove_duplicates_and_fill_missing(sample_water_data):
+    """Test duplicate row removal and 100% missing value filling."""
+    from src.data.clean import remove_duplicate_records, fill_missing_values
+    # Add duplicate rows
+    dups = pd.concat([sample_water_data, sample_water_data.iloc[:5]], ignore_index=True)
+    assert len(dups) == 105
+    df_dedup, dropped = remove_duplicate_records(dups)
+    assert dropped == 5
+    assert len(df_dedup) == 100
+
+    # Test filling missing values
+    assert df_dedup.isna().sum().sum() > 0
+    df_filled, filled_counts = fill_missing_values(df_dedup, numeric_strategy="median")
+    assert df_filled.isna().sum().sum() == 0, "All empty values must be filled"
+
