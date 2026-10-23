@@ -1,0 +1,73 @@
+project:
+  title: "Water Quality Prediction via Gradient Boosting and Deep Neural Networks"
+  phase: "Phase 1 - Machine Learning Evaluation"
+  random_seed: 42
+
+data:
+  raw_path: "data/raw"
+  raw_file: "data/raw/Combined_dataset.csv"
+  processed_path: "data/processed"
+  external_path: "data/external"
+  target_continuous: "CCME_Values"
+  target_categorical: "CCME_WQI"
+  target_column: "CCME_Values" # Primary target
+  site_column: "Area"
+  date_column: "Date"
+  sample_size: 50000 # Representative stratified/site sample for fast, rigorous AML training & CV
+
+sensor_columns:
+  - "Ammonia (mg/l)"
+  - "Biochemical Oxygen Demand (mg/l)"
+  - "Dissolved Oxygen (mg/l)"
+  - "Orthophosphate (mg/l)"
+  - "pH (ph units)"
+  - "Temperature (cel)"
+  - "Nitrogen (mg/l)"
+  - "Nitrate (mg/l)"
+
+physical_bounds:
+  "pH (ph units)": [0.0, 14.0]
+  "Dissolved Oxygen (mg/l)": [0.0, 30.0]
+  "Temperature (cel)": [-5.0, 50.0]
+  "Biochemical Oxygen Demand (mg/l)": [0.0, 1000.0]
+  "Ammonia (mg/l)": [0.0, 500.0]
+  "Orthophosphate (mg/l)": [0.0, 200.0]
+  "Nitrogen (mg/l)": [0.0, 500.0]
+  "Nitrate (mg/l)": [0.0, 500.0]
+
+split:
+  strategy: "site_separated" # GroupKFold by Area to test spatial generalization without site leakage
+  test_size: 0.20
+  n_splits: 5
+
+imputation:
+  strategy: "median"
+  add_indicator: true
+
+models:
+  random_forest:
+    n_estimators: 250
+    max_depth: 14
+    min_samples_split: 5
+    min_samples_leaf: 2
+    random_state: 42
+  xgboost:
+    n_estimators: 300
+    learning_rate: 0.05
+    max_depth: 6
+    subsample: 0.85
+    colsample_bytree: 0.85
+    reg_alpha: 0.1
+    reg_lambda: 1.0
+    random_state: 42
+
+evaluation:
+  continuous_metrics: ["mae", "rmse", "r2", "mape"]
+  classification_metrics: ["accuracy", "balanced_accuracy", "macro_f1", "weighted_f1", "brier_score", "ece"]
+  calibration_bins: 10
+  shap_sample_size: 300
+
+reports:
+  figures_dir: "reports/figures"
+  presentation_dir: "reports/presentation"
+  ieee_report_dir: "reports/report_ieee"
