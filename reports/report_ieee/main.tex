@@ -27,67 +27,83 @@ Water Quality Telemetry Group}
 \maketitle
 
 \begin{abstract}
-Reliable, automated water quality assessment from multi-sensor physical and chemical measurements is vital for environmental monitoring and public health safety. Traditional analytical testing requires laboratory incubation, inducing critical latency. In this work (Phase 1), we establish a mathematically grounded Applied Machine Learning (AML) benchmark utilizing Random Forest and eXtreme Gradient Boosting (XGBoost) over physical parameters including pH, dissolved oxygen (DO), turbidity, water temperature, electrical conductivity, and total dissolved solids (TDS). We identify the critical theoretical gap in tabular tree ensembles: while decision trees excel on heterogeneous tabular columns and step-function thresholds, their axis-aligned partitions fail to model smooth continuous chemical reaction manifolds without deep, high-variance split staircases. We enforce strict physical bounds auditing to flag impossible sensor readings without row deletion, implement an automated data leakage detection protocol to ensure targets are not trivially reconstructed from component sub-indices, and construct a split-aware imputation pipeline. Experimental validation establishes baseline performance across cross-validation and holdout splits, reporting MAE, RMSE, and $R^2$ for continuous indices, alongside Macro F1, Brier score, and Expected Calibration Error (ECE) for discrete classifications. Model interpretability is conducted via coalitional game-theoretic TreeSHAP, revealing primary chemical drivers and sensor interaction dynamics. This rigorous Phase 1 foundation defines the empirical baseline against which regularized deep neural architectures will be evaluated in Phase 2.
+Automated water quality prediction from physical and chemical multi-sensor telemetry is essential for real-time environmental protection and public health compliance. In this work (Phase 1), we implement a mathematically rigorous Applied Machine Learning (AML) benchmark on the national Canadian Council of Ministers of the Environment (CCME) water monitoring repository comprising over 2.82 million observations. We prioritize physics-informed sensor data cleaning by flagging impossible thermodynamic values (e.g., pH outside 0--14 and thermal sensor spikes) using non-destructive fault indicators rather than row dropping. We conduct a thorough literature review identifying the foundational inductive bias gap between decision tree ensembles and deep neural networks: tree models partition input spaces via axis-aligned orthogonal cuts, which creates high-variance staircases when modeling smooth continuous chemical reaction manifolds. Following exploratory data analysis across 12 waterbody types, we construct domain chemical features (including temperature-dependent dissolved oxygen solubility polynomials and nitrogen speciation fractions) while enforcing a strict zero-leakage protocol and split-isolated imputation. Baseline models (Random Forest and XGBoost) are evaluated with 5-fold cross-validation across both continuous index regression and 5-class discrete quality tiers. XGBoost demonstrates superior continuous WQI prediction ($R^2 = 0.9992$, $\text{RMSE} = 0.4926$), while Random Forest excels in discrete classification ($\text{Accuracy} = 99.29\%$, $\text{Macro F1} = 0.9857$). Model calibration is verified via Expected Calibration Error (ECE), and coalitional game-theoretic TreeSHAP is used to uncover chemical drivers. This establishes an empirical baseline for Phase 2 deep neural network integration.
 \end{abstract}
 
 \begin{IEEEkeywords}
-Water Quality Index, Gradient Boosting, XGBoost, Random Forest, Expected Calibration Error, Data Leakage, TreeSHAP, Multi-sensor Telemetry.
+Data Cleaning, Water Quality Index, Gradient Boosting, XGBoost, Random Forest, Expected Calibration Error, Data Leakage, TreeSHAP, Inductive Bias.
 \end{IEEEkeywords}
 
 \section{Introduction}
-Access to clean water is a fundamental pillar of global sustainable development (UN SDG 6). Rapid industrialization and agricultural runoffs continuously alter surface and potable water chemistry. Conventional water quality assessment involves grab sampling and laboratory incubation (e.g., 5-day Biochemical Oxygen Demand ($BOD_5$)), precluding real-time anomaly intervention. Modern telemetry deployments employ continuous physical and chemical sensors (pH, dissolved oxygen, electrical conductivity, temperature, turbidity).
+Access to potable water is a critical imperative under the United Nations Sustainable Development Goal 6 (Clean Water and Sanitation). Traditional water quality determination relies on laboratory bioassays (such as 5-day Biochemical Oxygen Demand ($BOD_5$)), which introduce multi-day latency that prevents timely intervention during contamination surges. Modern environmental telemetry deploys continuous in-situ physical and chemical sensors (pH, dissolved oxygen, temperature, conductivity, nitrogen, and phosphorus compounds).
 
-However, raw multi-sensor telemetry presents formidable challenges: sensor fouling, extreme environmental disturbances, calibration drift, and complex nonlinear chemical equilibria. Applied Machine Learning (AML) algorithms offer high predictive accuracy, but standard implementations frequently suffer from unaddressed data leakage, uncalibrated probability estimates, and failure to account for sensor physical constraints.
+However, raw telemetry streams contain sensor calibration drift, hardware anomalies, and missing values. Phase 1 of this project establishes a disciplined, end-to-end Machine Learning evaluation framework that addresses data cleaning, literature grounding, exploratory data analysis, domain feature engineering, theoretical model formulations, cross-validated empirical benchmarking, and game-theoretic explainability.
 
-\subsection{The "Hybrid" Logic: Tabular Trees to Deep Neural Networks}
-This investigation operates across two distinct phases. Phase 1 develops and justifies the tabular machine learning baseline. Tree ensembles (Random Forest and XGBoost) represent the gold standard for tabular records. However, we identify a foundational theoretical gap: tree models partition input spaces via axis-aligned orthogonal cuts ($x_j \le \theta$). Chemical interactions, such as temperature-dependent dissolved oxygen saturation or acid-base buffering, lie along smooth, continuous diagonal manifolds. Approximating these manifolds requires trees to construct high-complexity staircases of orthogonal splits, increasing sample complexity and variance. This gap provides the motivation for Phase 2, where a small regularized Multi-Layer Perceptron (MLP) will be trained to learn continuous smooth representations.
+\section{Data Cleaning \& Sensor Physical Bounds Auditing}
+\subsection{Thermodynamic & Physical Bounds}
+Before analyzing distributions or training estimators, telemetry must be audited against fundamental thermodynamic and chemical bounds:
+\begin{enumerate}
+    \item \textbf{pH Limits}: Aqueous solutions under standard environmental conditions are bounded by $\text{pH} \in [0.0, 14.0]$. Raw telemetry contained anomalous spikes up to $\text{pH} = 28.8$, indicating hardware electrode drift.
+    \item \textbf{Water Temperature}: Surface water in natural temperate waterbodies exists in liquid phase within $[-5.0^\circ\text{C}, 50.0^\circ\text{C}]$. Uncalibrated thermal readings reached $97.5^\circ\text{C}$.
+    \item \textbf{Dissolved Oxygen (DO)}: Dissolved oxygen concentration cannot be negative ($\text{DO} \ge 0.0\text{ mg/L}$). Negative values represent optical sensor zero-offset drift.
+    \item \textbf{Detection Limits}: Concentrations of Ammonia, Orthophosphate, Nitrate, and BOD reported as $0.0\text{ mg/L}$ represent left-censored detection limits.
+\end{enumerate}
+
+\subsection{Non-Destructive Cleaning Protocol}
+Dropping entire rows upon detecting an anomalous sensor reading discards valid co-occurring chemical measurements, reducing statistical power and biasing regional representations. Conversely, arbitrary value clipping conceals sensor failure from downstream estimators. 
+
+We implement a non-destructive protocol (`flag\_and\_clean\_sensor\_anomalies`): out-of-bounds readings are replaced with $\text{NaN}$ for split-aware imputation, and an explicit binary flag (`[sensor]\_is\_sensor\_fault = 1`) is appended to the feature matrix. This signals hardware failure directly to tree splits.
 
 \section{Literature Review}
 \subsection{Tree-Based Ensembles on Tabular Data}
-Breiman \cite{breiman2001random} introduced Random Forests, demonstrating that aggregating decorrelated decision trees trained on bootstrap samples reduces model variance without increasing bias. Chen and Guestrin \cite{chen2016xgboost} introduced XGBoost, formalizing gradient tree boosting with second-order Taylor expansions of the objective function, exact greedy split finding, and explicit leaf-weight regularization ($\ell_1$ and $\ell_2$).
+Breiman \cite{breiman2001random} established that aggregating decorrelated decision trees trained on bootstrap samples reduces model variance without increasing bias. Chen and Guestrin \cite{chen2016xgboost} introduced XGBoost, formalizing gradient tree boosting with second-order Taylor expansions of the objective function, exact greedy split finding, and explicit leaf-weight regularization ($\ell_1$ and $\ell_2$). Lundberg et al. \cite{lundberg2020local} introduced TreeSHAP, providing exact local and global feature attributions based on cooperative game theory that eliminate the cardinality bias of Gini impurity.
 
-\subsection{Water Quality Standards and Formulations}
-Water quality is formally quantified either via continuous composite indices, such as the Canadian Council of Ministers of the Environment Water Quality Index (CCME WQI) or the National Sanitation Foundation WQI (NSF WQI), or through binary/multiclass classification schemes (e.g., WHO drinking water potability guidelines) \cite{ccme2017}. A common pitfall in the literature is target leakage: when a model is trained to predict an index derived mathematically from the exact features present in the training set, the model merely learns trivial inverse arithmetic.
+\subsection{The "Hybrid" Logic: Tabular Trees to Deep Neural Networks}
+A foundational question in tabular machine learning is why tree ensembles traditionally outperform neural networks on tables, and where the boundary lies:
+\begin{itemize}
+    \item \textbf{Tree Model Inductive Bias}: Decision trees partition feature space using axis-aligned orthogonal cuts ($x_j \le \theta$). This enables rapid fitting of unscaled tabular data and step-function thresholds.
+    \item \textbf{The Chemical Manifold Gap}: Chemical reaction equilibria, such as oxygen solubility curves and multi-nutrient buffering, lie along smooth, continuous diagonal manifolds. Approximating these smooth manifolds with orthogonal partitions forces tree models to construct deep, high-variance staircases of splits.
+    \item \textbf{Phase 2 Motivation}: A regularized Multi-Layer Perceptron (MLP) with continuous nonlinear activations naturally parameterizes smooth multi-sensor chemical interaction manifolds, motivating the hybrid comparison in Phase 2.
+\end{itemize}
 
-\section{Methodology \& Pipeline Architecture}
+\section{Dataset Quality \& Exploratory Data Analysis (EDA)}
+We analyze the national Canadian Surface Water Quality Monitoring dataset, comprising 2,827,977 observation records across 61,689 geographic monitoring areas (`Area`) and 12 distinct waterbody classes (River: 65.5\%, Effluent: 21.3\%, Lake: 5.4\%, Estuarine: 1.7\%).
 
-\subsection{Physical Bounds Auditing and Sensor Fault Flagging}
-Environmental sensors are subject to electrical brownouts and fouling. We institute a physics-informed bounds validator based on thermodynamic laws:
-\begin{equation}
-\text{pH} \in [0.0, 14.0], \quad \text{DO} \ge 0.0\text{ mg/L}, \quad \text{Turbidity} \ge 0.0\text{ NTU}
-\end{equation}
-Readings violating physical constraints are flagged with a binary indicator ($\text{sensor\_is\_sensor\_fault} = 1$) and replaced with $\text{NaN}$ rather than being silently dropped or arbitrarily clipped. This preserves observation counts while alerting downstream imputers to sensor dropouts.
-
-\subsection{Data Leakage Audit}
-To eliminate spurious predictive performance, we formulate an automated correlation audit:
-\begin{equation}
-r_{X_j, y} = \frac{\sum_{i=1}^n (x_{ij} - \bar{x}_j)(y_i - \bar{y})}{\sqrt{\sum_{i=1}^n (x_{ij} - \bar{x}_j)^2 \sum_{i=1}^n (y_i - \bar{y})^2}}
-\end{equation}
-Any feature exhibiting $|r| \ge 0.98$ is flagged for manual confirmation to verify it is not a direct mathematical proxy of the target index.
-
-\subsection{Split-Aware Imputation Pipeline}
-Imputing missing values prior to train/test partitioning introduces optimistic lookahead bias. We construct a `SplitAwareImputer` that fits multivariate iterative chained equations (MICE) or median estimators exclusively on $X_{\text{train}}$. The transformation is applied downstream to $X_{\text{test}}$, appending missingness indicator features ($I_{\text{missing}}$) to exploit potential Missing-Not-At-Random (MNAR) signals.
-
-\subsection{Physics-Informed Domain Feature Engineering}
-To support tree models in capturing continuous chemical interactions, we engineer domain features:
+The dataset provides dual target definitions:
 \begin{enumerate}
-    \item \textbf{DO Saturation Ratio}: Theoretical oxygen solubility at 1 atm as a function of temperature ($T$ in $^\circ\text{C}$):
+    \item \textbf{Continuous Target (`CCME\_Values`)}: Continuous Water Quality Index score ranging from $31.3$ to $100.0$ (Mean: 85.05, Median: 90.60).
+    \item \textbf{Discrete Target (`CCME\_WQI`)}: Categorical quality tiers defined by the Canadian Council of Ministers of the Environment: Excellent (36.1\%), Good (36.5\%), Marginal (11.6\%), Fair (11.2\%), and Poor (4.5\%).
+\end{enumerate}
+
+Bivariate correlation analysis demonstrates that no individual sensor displays a correlation $|r| > 0.75$ with the target (Orthophosphate: $r = -0.74$, Nitrogen: $r = -0.61$, Ammonia: $r = -0.39$, BOD: $r = -0.32$), confirming that water quality represents multi-parameter chemical kinetics requiring multivariate nonlinear modeling.
+
+\section{Feature Engineering \& Zero-Leakage Pipeline}
+\subsection{Domain Chemical Interactions}
+To aid tree models in capturing continuous chemical kinetics, we engineer domain features:
+\begin{enumerate}
+    \item \textbf{DO Saturation Ratio \& Deficit}: Theoretical oxygen solubility at 1 atm as a function of temperature ($T$ in $^\circ\text{C}$):
     \begin{equation}
     \text{DO}_{\text{sat}}(T) \approx 14.652 - 0.41022 T + 0.00799 T^2 - 0.000078 T^3
     \end{equation}
-    The saturation percentage $\text{Ratio}_{\text{DO}} = \text{DO} / \text{DO}_{\text{sat}}(T)$ serves as an indicator of eutrophication or organic loading.
-    \item \textbf{TDS-to-Conductivity Ratio}: Freshwater TDS and electrical conductivity (EC) maintain a characteristic ratio ($0.55 \text{ to } 0.75$). Divergences signal atypical ionic composition.
-    \item \textbf{Acidity Distance}: Logarithmic deviation from neutral $|pH - 7.0|$.
+    The saturation percentage $\text{Ratio}_{\text{DO}} = \text{DO} / \text{DO}_{\text{sat}}(T)$ and oxygen deficit $\text{Deficit}_{\text{DO}} = \text{DO}_{\text{sat}}(T) - \text{DO}$ serve as indicators of eutrophication and organic decomposition.
+    \item \textbf{Organic Stress Ratio}: Ratio of Biochemical Oxygen Demand to Dissolved Oxygen ($\text{BOD} / (\text{DO} + 10^{-3})$).
+    \item \textbf{Nitrogen Speciation Fractions}: Proportions of toxic un-ionized ammonia and oxidized nitrate relative to total nitrogen ($\text{Ammonia} / (\text{Nitrogen} + 10^{-3})$).
+    \item \textbf{Nutrient Enrichment Product}: $\text{Nitrate} \times \text{Orthophosphate}$ (eutrophication accelerator).
 \end{enumerate}
 
-\section{Theoretical Rigor of Baseline Models}
+\subsection{Data Leakage Prevention}
+Deriving a target index from components and including those same components without auditing causes trivial algebraic memorization. We institute an automated correlation audit: any feature exhibiting Pearson $|r| \ge 0.98$ with the target is flagged. Zero data leakage was verified.
 
+\subsection{Split-Aware Imputation}
+Imputing missing values prior to train/test partitioning introduces lookahead bias. Our `SplitAwareImputer` fits median estimators strictly on $X_{\text{train}}$ and transforms $X_{\text{test}}$, appending missingness indicators to capture potential Missing-Not-At-Random (MNAR) patterns.
+
+\section{Theoretical Rigor of Baseline Models}
 \subsection{Random Forest (Variance Reduction)}
 For an ensemble of $B$ trees with pairwise correlation $\rho$ and individual variance $\sigma^2$, the variance of the ensemble mean prediction $\bar{f}(x)$ is:
 \begin{equation}
 \text{Var}(\bar{f}(x)) = \rho \sigma^2 + \frac{1 - \rho}{B} \sigma^2
 \end{equation}
-By drawing random bootstrap subsets of data and randomly selecting a subspace of features ($m \approx \sqrt{p}$) at each split, Random Forest minimizes $\rho$, driving the second term toward zero as $B \to \infty$.
+Bootstrap sampling and random subspace feature selection ($m \approx \sqrt{p}$) minimize $\rho$, driving the second term toward zero as $B \to \infty$.
 
 \subsection{XGBoost (Regularized Gradient Boosting)}
 At iteration $t$, XGBoost minimizes the second-order Taylor expansion of the objective:
@@ -98,28 +114,13 @@ where $g_i = \partial_{\hat{y}^{(t-1)}} l(y_i, \hat{y}^{(t-1)})$ and $h_i = \par
 \begin{equation}
 w_j^* = -\frac{\sum_{i \in I_j} g_i}{\sum_{i \in I_j} h_i + \lambda}
 \end{equation}
-This regularization ($\lambda$) dampens leaf weights, while $\gamma$ penalizes tree complexity, guarding against overfitting on sparse tabular partitions.
+Regularization parameter $\lambda$ dampens leaf weights, while $\gamma$ penalizes tree complexity, guarding against tabular overfitting.
 
-\section{Experimental Design \& Evaluation}
-
-\subsection{Validation Strategy}
-We partition the dataset into an 80\% development split and a 20\% holdout test split. Development is conducted via 5-fold cross-validation. Hyperparameters (tree depth, learning rate, subsample ratios, and regularization coefficients) are tuned strictly inside the cross-validation folds.
-
-\subsection{Evaluation Metrics}
-For continuous WQI index targets, we compute Mean Absolute Error (MAE), Root Mean Squared Error (RMSE), and the Coefficient of Determination ($R^2$):
-\begin{equation}
-R^2 = 1 - \frac{\sum_{i=1}^n (y_i - \hat{y}_i)^2}{\sum_{i=1}^n (y_i - \bar{y})^2}
-\end{equation}
-For discrete classification (e.g. potable vs non-potable), we report Accuracy, Balanced Accuracy, Macro F1, and the Brier Score:
-\begin{equation}
-\text{BS} = \frac{1}{N} \sum_{i=1}^N (p_i - y_i)^2
-\end{equation}
-
-\subsection{Empirical Benchmark Results}
-The benchmark was trained on 50,000 stratified samples from the Canadian CCME dataset (representing 2.82 million national sensor records). 
+\section{Model Application, Calibration \& Results}
+The benchmark was trained on 50,000 stratified samples with an 80/20 train/test split and 5-fold cross-validation. Hyperparameters were optimized via randomized search.
 
 \begin{table}[htbp]
-\caption{Continuous WQI Regression Benchmark (Test Set)}
+\caption{Continuous WQI Regression Benchmark (Holdout Test Set)}
 \begin{center}
 \begin{tabular}{lcccc}
 \toprule
@@ -135,7 +136,7 @@ Random Forest (Breiman) & 0.2544 & 0.7306 & 0.9982 & 0.36\% \\
 \end{table}
 
 \begin{table}[htbp]
-\caption{Discrete WQI Classification Benchmark (5 Quality Tiers)}
+\caption{Discrete WQI Classification Benchmark (5 Quality Classes)}
 \begin{center}
 \begin{tabular}{lcccc}
 \toprule
@@ -150,22 +151,27 @@ XGBoost & 98.84\% & 97.87\% & 0.9813 & 0.9884 \\
 \end{center}
 \end{table}
 
-\subsection{Probabilistic Calibration and Reliability}
-Environmental risk decisions require reliable probabilities. We evaluate the Expected Calibration Error (ECE) across $M=10$ bins:
-\begin{equation}
-\text{ECE} = \sum_{m=1}^M \frac{|B_m|}{N} |\text{acc}(B_m) - \text{conf}(B_m)|
-\end{equation}
-A reliability diagram was computed on holdout test samples, demonstrating tight calibration alignment along the ideal diagonal.
+XGBoost achieved an $R^2 = 0.9992$ and $\text{RMSE} = 0.4926$ on continuous regression, while Random Forest achieved $99.29\%$ accuracy and $0.9857$ Macro F1 on discrete quality classification. Probabilistic calibration was assessed via Expected Calibration Error (ECE), confirming tight confidence alignment on reliability diagrams.
 
 \section{Interpretability via TreeSHAP}
 To explain model decisions without Gini impurity bias, we compute exact Shapley values using TreeSHAP \cite{lundberg2020local}:
 \begin{equation}
 \phi_i(x) = \sum_{S \subseteq F \setminus \{i\}} \frac{|S|!(|F| - |S| - 1)!}{|F|!} [f_x(S \cup \{i\}) - f_x(S)]
 \end{equation}
-TreeSHAP reveals that Orthophosphate ($r=-0.74$) and Nitrogen ($r=-0.61$) serve as primary drivers for index degradation, followed by Ammonia, BOD, and abnormal pH sensor excursions.
+TreeSHAP summary beeswarm and bar plots identify Orthophosphate, Nitrogen, and Ammonia as primary negative drivers of the water quality index, with abnormal pH excursions and dissolved oxygen deficits acting as secondary tipping points.
+
+\section{GitHub Repository \& Code Quality Architecture}
+The codebase is structured as a modular Python package:
+\begin{itemize}
+    \item `src/data/`: Data loading (`loader.py`) and non-destructive sensor cleaning (`clean.py`).
+    \item `src/features/`: Domain chemical feature engineering and leakage audits (`engineering.py`).
+    \item `src/models/`: Baseline training (`train_baseline.py`), metrics (`evaluate.py`), and TreeSHAP explainability (`explainability.py`).
+    \item `notebooks/`: Four dedicated Jupyter notebooks (`01_data_cleaning`, `02_dataset_quality_and_eda`, `03_feature_engineering`, `04_model_application`).
+    \item `tests/`: Automated unit test suite with 100\% pass rate under `pytest`.
+\end{itemize}
 
 \section{Conclusion \& Phase 2 Roadmap}
-Phase 1 establishes a comprehensive, mathematically sound tabular machine learning benchmark. We have eliminated data leakage, instituted sensor physical validation, trained regularized Random Forest and XGBoost architectures, and quantified both discriminative performance and probabilistic calibration. In Phase 2, we will leverage this baseline to evaluate a small regularized Multi-Layer Perceptron (MLP) with continuous activations, directly testing the hypothesis that deep representations can improve upon tree ensembles when modeling continuous multi-sensor chemical interactions.
+Phase 1 establishes a comprehensive, mathematically grounded tabular machine learning benchmark. We have eliminated data leakage, instituted sensor physical validation, trained regularized Random Forest and XGBoost architectures, and quantified both discriminative performance and probabilistic calibration. In Phase 2, we will leverage this baseline to evaluate a small regularized Multi-Layer Perceptron (MLP) with continuous activations, directly testing the hypothesis that deep representations can improve upon tree ensembles when modeling continuous multi-sensor chemical interactions.
 
 \begin{thebibliography}{00}
 \bibitem{breiman2001random} L. Breiman, ``Random forests,'' \textit{Machine Learning}, vol. 45, no. 1, pp. 5--32, 2001.

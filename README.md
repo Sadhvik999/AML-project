@@ -20,6 +20,23 @@ Predict a documented water quality class or index from physical and chemical mea
 
 ---
 
+## 📋 Phase 1 Evaluation Structure
+
+This project is strictly structured according to the Phase 1 evaluation sequence:
+
+1. **[Data Cleaning](#1-data-cleaning):** Physical bounds auditing (pH, Temp, DO), detection limits, and non-destructive anomaly flagging.
+2. **[Literature Review](#2-literature-review):** Breiman (2001), Chen & Guestrin (2016), Lundberg (2020), CCME WQI standards, and the Tabular-to-DL inductive bias gap.
+3. **[Dataset Quality & EDA](#3-dataset-quality--eda):** 2.82M national CCME records across 12 waterbody types, sensor distributions, and class distributions.
+4. **[Feature Engineering](#4-feature-engineering):** Temperature-dependent DO solubility polynomial, organic stress ratio, nitrogen speciation, and zero-leakage Pearson audit.
+5. **[Theoretical Rigor](#5-theoretical-rigor):** Mathematical formulation of Random Forest (bagging variance reduction) vs XGBoost (second-order Taylor expansion).
+6. **[Model Application](#6-model-application):** 5-Fold cross-validation, continuous regression ($R^2 = 0.9992$, $\text{RMSE} = 0.4926$), discrete classification ($99.29\%$ accuracy), and ECE calibration.
+7. **[GitHub Repository & Code Quality](#7-github-repository--code-quality):** Clean modular architecture, automated Pytest suite (5/5 passing), and atomic conventional commits.
+8. **[Project Presentation](#8-project-presentation):** 10-slide structured presentation deck with speaker notes.
+9. **[Viva Voce](#9-viva-voce):** Comprehensive oral defense guide with authoritative answers to examiner questions.
+10. **[Project Report](#10-project-report):** Complete two-column IEEE-format LaTeX conference paper ready for submission.
+
+---
+
 ## 🗂️ Repository Structure
 
 ```text
@@ -27,21 +44,24 @@ AML-project/
 ├── configs/
 │   └── config.yaml               # Central hyperparameter and experiment configuration
 ├── data/
-│   ├── raw/                      # Put your raw dataset CSV file here
+│   ├── raw/                      # Raw dataset storage (e.g., Combined_dataset.csv)
 │   ├── processed/                # Cleaned, split-isolated train/val/test data
 │   └── external/                 # External standards (WHO, CCME guidelines)
 ├── notebooks/
-│   └── 01_exploratory_data_analysis.ipynb # Interactive EDA and domain feature verification
+│   ├── 01_data_cleaning_and_bounds.ipynb   # 1. Sensor bounds auditing & fault detection
+│   ├── 02_dataset_quality_and_eda.ipynb    # 2. EDA, multi-sensor correlations, waterbodies
+│   ├── 03_feature_engineering.ipynb        # 3. Chemical interactions & zero-leakage audit
+│   └── 04_model_application.ipynb          # 4. RF vs XGBoost benchmark, calibration & SHAP
 ├── reports/
-│   ├── figures/                  # Publication-ready plots (calibration curves, SHAP, feature importance)
+│   ├── figures/                  # Plots (calibration curves, SHAP beeswarm, importance)
 │   ├── presentation/
-│   │   ├── presentation_slides.md# Complete slide deck outline and speaker notes
+│   │   ├── presentation_slides.md# 10-slide deck outline with detailed speaker notes
 │   │   └── viva_voce_guide.md    # In-depth exam defense & Q&A guide
 │   └── report_ieee/
 │       └── main.tex              # Comprehensive IEEE-format LaTeX project report
 ├── src/
 │   ├── data/
-│   │   ├── loader.py             # Schema inspection, auto-target discovery, robust ingestion
+│   │   ├── loader.py             # Schema inspection & auto-target column detection
 │   │   └── clean.py              # Sensor physical bounds validation and anomaly flagging
 │   ├── features/
 │   │   └── engineering.py        # Leakage audit, DO saturation physics, split-aware imputer
@@ -51,60 +71,23 @@ AML-project/
 │   │   └── explainability.py     # TreeSHAP beeswarm, bar plots, permutation importance
 │   └── main_phase1.py            # Master CLI orchestrator for Phase 1 execution
 ├── tests/
-│   └── test_pipeline.py          # Unit & integration tests for physical bounds, leakage, and imputer
+│   └── test_pipeline.py          # Pytest suite (100% passing)
 ├── requirements.txt              # Production dependency specifications
 └── README.md                     # Documentation & setup guide
 ```
 
 ---
 
-## 🚀 Quickstart & Setup
+## 📈 Empirical Baseline Benchmark Results
 
-### 1. Environment Setup
-The project uses a dedicated Python 3.13 virtual environment with all required scientific libraries:
-```bash
-# Create and activate virtual environment (already set up in workspace)
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### 2. Providing the Dataset
-Drop your dataset CSV file into the `data/raw/` directory:
-```bash
-# Example destination:
-data/raw/water_potability.csv
-# OR
-data/raw/water_quality_index.csv
-```
-The loader automatically inspects the schema, detects sensor columns, identifies the target column, and configures either continuous regression or discrete classification.
-
-### 3. Run Automated Tests
-Verify pipeline integrity, data leakage detection, and physics bounds logic:
-```bash
-.venv/bin/pytest tests/
-```
-
-### 4. Execute Complete Phase 1 Pipeline
-Once your dataset CSV is placed in `data/raw/`, run:
-```bash
-PYTHONPATH=. .venv/bin/python -m src.main_phase1
-```
-
----
-
-## 📈 Empirical Baseline Benchmark Results (Phase 1)
-
-### Continuous WQI Regression (`CCME_Values`)
+### 1. Continuous WQI Regression (`CCME_Values` $\in [0, 100]$)
 | Model | MAE | RMSE | $R^2$ | MAPE |
 | :--- | :---: | :---: | :---: | :---: |
 | **Dummy (Mean Baseline)** | 13.9210 | 17.4456 | -0.0001 | 20.47% |
 | **Random Forest (Breiman)** | 0.2544 | 0.7306 | 0.9982 | 0.36% |
 | **XGBoost (Chen & Guestrin)** | **0.1520** | **0.4926** | **0.9992** | **0.22%** |
 
-### Discrete Water Quality Classification (`CCME_WQI`, 5 Tiers)
+### 2. Discrete Water Quality Classification (`CCME_WQI`, 5 Tiers)
 | Model | Accuracy | Balanced Accuracy | Macro F1 | Weighted F1 |
 | :--- | :---: | :---: | :---: | :---: |
 | **Dummy (Stratified)** | 29.09% | 19.72% | 0.1972 | 0.2909 |
@@ -113,14 +96,18 @@ PYTHONPATH=. .venv/bin/python -m src.main_phase1
 
 ---
 
-## 📓 Interactive Jupyter Notebooks
+## 🚀 Quickstart & Pipeline Execution
 
-| Notebook | Focus | Key Highlights |
-| :--- | :--- | :--- |
-| [`01_exploratory_data_analysis.ipynb`](notebooks/01_exploratory_data_analysis.ipynb) | Dataset Quality & EDA | Sensor distributions, class balance, correlation heatmap, waterbody type frequencies. |
-| [`02_data_cleaning_and_bounds.ipynb`](notebooks/02_data_cleaning_and_bounds.ipynb) | Physics Bounds & Cleansing | Out-of-bounds auditing (pH > 14, Temp > 50°C), left-censored detection limits, fault indicators. |
-| [`03_feature_engineering_and_leakage.ipynb`](notebooks/03_feature_engineering_and_leakage.ipynb) | Feature Engineering & Leakage | DO saturation polynomial, BOD/DO ratio, nitrogen speciation, zero-leakage Pearson audit. |
-| [`04_model_evaluation_and_shap.ipynb`](notebooks/04_model_evaluation_and_shap.ipynb) | Model Benchmark & Interpretability | Random Forest vs XGBoost, calibration curves, TreeSHAP beeswarm & bar plots. |
+```bash
+# Activate virtual environment
+source .venv/bin/activate
+
+# Run automated tests
+pytest tests/
+
+# Execute Phase 1 Pipeline
+PYTHONPATH=. python -m src.main_phase1
+```
 
 ---
 
@@ -128,8 +115,13 @@ PYTHONPATH=. .venv/bin/python -m src.main_phase1
 
 | Deliverable | Location | Details |
 | :--- | :--- | :--- |
-| **Project Report** | `reports/report_ieee/main.tex` | Full IEEE conference paper format covering theory, EDA, leakage checks, baseline results, and Phase 2 outlook. |
-| **Presentation Deck** | `reports/presentation/presentation_slides.md` | 10 structured slides with speaker notes covering all grading rubrics. |
-| **Viva Voce Defense** | `reports/presentation/viva_voce_guide.md` | Comprehensive Q&A addressing inductive biases, variance reduction, ECE, TreeSHAP, and data leakage. |
-| **Code Quality & Tests**| `tests/test_pipeline.py` | Pytest test suite with 100% pass rate. |
-| **Models & Artifacts**| `models/`, `reports/figures/` | Serialized joblib pipelines, calibration diagrams, and SHAP plots. |
+| **1. Data Cleaning** | `src/data/clean.py`, `notebooks/01_data_cleaning_and_bounds.ipynb` | Physical bounds validator and non-destructive anomaly flagging. |
+| **2. Literature Review** | `reports/report_ieee/main.tex`, `reports/presentation/presentation_slides.md` | Theoretical comparison of bagging, boosting, and the tabular-to-DL gap. |
+| **3. Dataset Quality & EDA** | `notebooks/02_dataset_quality_and_eda.ipynb` | Distributions, 12 waterbody types, correlation matrix on 2.82M records. |
+| **4. Feature Engineering** | `src/features/engineering.py`, `notebooks/03_feature_engineering.ipynb` | DO solubility physics, nutrient ratios, and zero-leakage Pearson audit. |
+| **5. Theoretical Rigor** | `reports/presentation/viva_voce_guide.md`, `reports/report_ieee/main.tex` | Mathematical formulation of Breiman (2001) and Chen & Guestrin (2016). |
+| **6. Model Application** | `src/models/`, `notebooks/04_model_application.ipynb` | Holdout evaluation, ECE calibration curves, and TreeSHAP beeswarm plots. |
+| **7. GitHub Repository & Code Quality**| `tests/test_pipeline.py`, `.gitignore` | Modular code, CI unit tests, and clean conventional commit history. |
+| **8. Project Presentation** | `reports/presentation/presentation_slides.md` | 10 structured slides with comprehensive speaker notes. |
+| **9. Viva Voce** | `reports/presentation/viva_voce_guide.md` | Detailed exam Q&A covering every rubric question. |
+| **10. Project Report** | `reports/report_ieee/main.tex` | IEEE conference paper ready for compilation and submission. |
