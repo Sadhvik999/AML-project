@@ -37,9 +37,8 @@ wheels/
 *.swo
 .DS_Store
 
-# Data & Output (Track directory structure via .gitkeep, ignore heavy raw/processed data)
-data/raw/*
-!data/raw/.gitkeep
+# Data & Output (Ignore uncompressed heavy files >100MB; track sample CSV & compressed gz)
+data/raw/Combined_dataset.csv
 data/processed/*
 !data/processed/.gitkeep
 data/external/*

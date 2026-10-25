@@ -52,10 +52,10 @@ def find_raw_dataset(raw_dir: Union[str, Path] = "data/raw") -> Optional[Path]:
     if not raw_path.exists():
         raise FileNotFoundError(f"Directory {raw_dir} does not exist.")
 
-    supported_extensions = [".csv", ".parquet", ".xlsx", ".xls"]
+    supported_extensions = [".csv", ".parquet", ".xlsx", ".xls", ".gz"]
     candidates = [
         f for f in raw_path.iterdir()
-        if f.suffix.lower() in supported_extensions and not f.name.startswith(".")
+        if (f.suffix.lower() in supported_extensions or f.name.endswith(".csv.gz")) and not f.name.startswith(".")
     ]
 
     if not candidates:
@@ -75,11 +75,14 @@ def load_dataset(file_path: Union[str, Path]) -> pd.DataFrame:
         raise FileNotFoundError(f"File not found: {path}")
 
     ext = path.suffix.lower()
-    if ext == ".csv":
+    is_gz = path.name.endswith(".gz")
+    if ext == ".csv" or is_gz:
         for encoding in ["utf-8", "latin1", "iso-8859-1", "cp1252"]:
             try:
-                # Try reading first with auto-sep detection
-                df = pd.read_csv(path, sep=None, engine="python", encoding=encoding)
+                # Pandas automatically decompresses .gz files
+                compression = "gzip" if is_gz else None
+                engine = "c" if is_gz else "python"
+                df = pd.read_csv(path, encoding=encoding, compression=compression)
                 logger.info("Loaded CSV '%s' with %d rows and %d columns (encoding: %s)",
                             path.name, len(df), df.shape[1], encoding)
                 return df
